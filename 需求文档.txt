@@ -1,0 +1,48 @@
+1.课表：http://jwgl.wfust.edu.cn/wfkjjw/cas/login.action，这里参考喜鹊app，获取课表后要存在app本地，优先读取本地数据，然后再自动更新
+2.四六级报名及查询：报名https://cet-bm.neea.edu.cn/  查询https://iam.neea.edu.cn/login.html?client_id=prod_query_web&response_type=code&redirect_uri=https%3A%2F%2Fcjcx.neea.edu.cn%2Fhtml1%2Ffolder%2F21033%2F653-1.htm&scope=basic&state=70c590f7ba90722b507e86bae35bf8c523cb06c7c1a081997f68bbd0e1b53314fa1e4f2831b8c5fd057877745d7cd9f5510bb1f6d9da20b0b79f1cd299749b58
+这个好弄，浏览器内核转跳做好适配就行
+3.宿舍信息查询：小程序 潍坊科技学院财务处
+这里咱们做过，到时候你做个模板我根据你的模板去进行美化
+4.学费查询：小程序 潍坊科技学院财务处
+咱们也做过，主要就是要可以支付学费且保证app没问题
+5.校园卡充值：校园e码通（涉及支付）
+咱们测试可以页面转跳，尽量做到可以转跳到app去支付
+6.校园网：app giwifi助手，购买涉及支付登录连接不涉及
+这个就是有个购买接口
+7.校园跑：模拟正确跑步，如果合格就可以传上去。app  潍科运动   这个咱们也做过了，登录app看看做的一毛一样就行
+8.喜鹊儿个人信息界面    直接去看喜鹊app
+9.微信推送每日课表，如公众号 wxpusher这种会每日推送课表
+10.需要内置一个商城系统，简单讲就是展示界面以及可以下单但是跟传统界面不同后期补充
+11.教材答案（增加用户粘性），这里开放性比较大，我想做成类似于书架这一种，然后大一大二大三各个年级书本分开，把答案给附上用户自己翻阅，类似于电子图书馆
+12.卖电动车 自行车 二手书 床上用品
+这个地方需要辛苦你给我个方式，我是想做成类似于第四条学费查询的界面，用户可选择交什么费用，把我们的商品放在里面让人误以为是学校提供的，这样就是先调起支付我们的商品，再转跳去银行app支付学费等
+13.公告  参考喜鹊的一些公告
+14.还是看喜鹊，显示今日课程
+15.选课，这个看教务系统最后做
+
+
+
+
+需求：制作ios和安卓端的app以及小程序，在安卓各厂商应用商店及appstore上架
+测试app 喜鹊儿 
+账号  202304040309
+密码  Jzj666666.
+以喜鹊儿app为模板，再增加更多功能（课表可以做的一毛一样）
+
+
+
+瑞数获取cookies
+(function() {
+    var cookieTemp = "";
+    Object.defineProperty(document, 'cookie', {
+        set: function(val) {
+            console.log('Hook捕获到cookie设置->', val);
+            debugger;
+            cookieTemp = val;
+            return val;
+        },
+        get: function() {
+            return cookieTemp;
+        }
+    });
+})();

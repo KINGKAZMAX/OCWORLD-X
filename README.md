@@ -1,50 +1,38 @@
-# Welcome to your Expo app 👋
+# Minimal Expo 学习模板
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## 启动步骤
 
-## Get started
-
-1. Install dependencies
-
+1. 安装依赖
    ```bash
    npm install
    ```
-
-2. Start the app
-
+2. 启动 Metro（默认使用开发版客户端）
    ```bash
-   npx expo start
+   npm run start
    ```
+3. 运行原生客户端（首次需要构建 Dev Client）
+   ```bash
+   npm run ios   # 或 npm run android
+   ```
+4. 清除缓存重新构建   
+   ```
+   npx expo start --clear
+   ```
+## 目录 & 文件说明
 
-In the output, you'll find options to open the app in a
+- `app/`：Expo Router 的页面目录。现在只有 `index.tsx`（主界面）和 `_layout.tsx`（路由结构）。
+- `assets/`：图标、Splash 等静态资源，启动器会自动读取 `app.json` 中引用的图片。
+- `android/`、`ios/`：`npx expo prebuild` 生成的原生工程，用来在模拟器或真机上跑 Dev Client。
+- `app.json`：Expo 项目的配置（应用名称、包名、图标、实验特性等）。
+- `package.json`：npm 依赖列表与脚本命令，例如 `npm run start`、`npm run ios`。
+- `tsconfig.json`：TypeScript 设置，包含 `@/*` 的路径别名。
+- `eslint.config.js`：代码检查规则。
+- `expo-env.d.ts`：让 TypeScript 能识别 Expo 的全局类型。
+- `README.md`：当前这份说明，记得更新它来记录你的学习笔记。
+- （自动生成）`node_modules/`：安装依赖后出现的目录，存放第三方库。
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 下一步可以做什么？
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- 直接编辑 `app/index.tsx` 改成你想要的 UI。
+- 在 `app/` 里新建 `details.tsx` 等文件感受文件路由。
+- 修改 `app.json` 里的图标、包名、Splash，让应用更像自己的作品。
