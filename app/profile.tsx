@@ -1,6 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL } from '../config/api';
 
 type MenuItem = {
   label: string;
@@ -18,23 +21,85 @@ const menuItems: MenuItem[] = [
   { label: '退出登录', icon: 'power-standby', color: '#f43f5e', danger: true },
 ];
 
+type UserInfo = {
+  nickname: string;
+  email: string;
+};
+
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+
+  // 获取用户信息
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const token = await AsyncStorage.getItem('access_token');
+        if (!token) return;
+
+        const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const data: any = await response.json();
+          if (data) {
+            setUserInfo({
+              nickname: String(data.nickname ?? ''),
+              email: String(data.email ?? ''),
+            });
+          }
+        }
+      } catch (e) {
+        console.error('获取用户信息失败:', e);
+      }
+    };
+
+    fetchUserInfo();
+  }, []);
+
+  // 退出登录
+  const handleLogout = useCallback(() => {
+    Alert.alert('确认退出', '确定要退出登录吗？', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '确定',
+        style: 'destructive',
+        onPress: async () => {
+          await AsyncStorage.removeItem('access_token');
+          await AsyncStorage.removeItem('refresh_token');
+          router.replace('/');
+        },
+      },
+    ]);
+  }, []);
+
+  // 菜单点击处理
+  const handleMenuPress = useCallback((label: string) => {
+    if (label === '退出登录') {
+      handleLogout();
+    } else if (label === '账号安全') {
+      router.push('/account-security');
+    } else if (label === '设置') {
+      router.push('/settings');
+    }
+  }, [handleLogout]);
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top || 0 }]}>
+    <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           <View style={styles.avatar}>
-            <MaterialCommunityIcons name="office-building-outline" size={46} color="#ffffff" />
+            <MaterialCommunityIcons name="account" size={46} color="#ffffff" />
           </View>
-          <Text style={styles.name}>刘德华</Text>
-          <Text style={styles.meta}>计算机学院 · 2021 级</Text>
+          <Text style={styles.name}>{userInfo?.nickname || '未登录'}</Text>
+          <Text style={styles.meta}>{userInfo?.email || '请先登录'}</Text>
         </View>
 
         <View style={styles.menu}>
           {menuItems.map((item) => (
-            <Pressable key={item.label} style={styles.row}>
+            <Pressable key={item.label} style={styles.row} onPress={() => handleMenuPress(item.label)}>
               <View style={[styles.iconBadge, { backgroundColor: `${item.color}1A` }]}>
                 <MaterialCommunityIcons name={item.icon} size={22} color={item.color} />
               </View>

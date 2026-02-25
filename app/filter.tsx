@@ -1,11 +1,11 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ImageBackground, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-
-// API 服务器地址
-const API_BASE_URL = 'http://101.43.234.149:8003';
+import { API_BASE_URL, SCHEDULE_API_URL } from '../config/api';
+import { DEFAULT_CLASS_TIMES, SCHEDULE_BACKGROUNDS, SCHEDULE_BG_IMAGE_KEY, SCHEDULE_BG_STORAGE_KEY, SCHEDULE_SHOW_TIME_KEY, SCHEDULE_TIME_STORAGE_KEY } from './settings';
 
 // 计算当前是第几周（基于学期开始日期）
 const calculateCurrentWeek = (semesterYear: number): number => {
@@ -206,14 +206,17 @@ const normalizeScheduleSlots = (raw: any): Map<string, CourseSlot[]> => {
                 dayCourses.forEach((item: any) => {
                     if (!item || typeof item !== 'object') return;
                     
+                    // 如果没有课程名称，跳过
+                    if (!item.kcmc) return;
+                    
                     // 解析节次
                     const sections = parseSections(item.jcxx, item.jcdm);
                     if (sections.length === 0) return;
                     
                     // 构建课程信息
                     const courseInfo: CourseSlot = {
-                        course: item.kcmc ?? '课程',
-                        name: item.kcmc ?? '课程',
+                        course: item.kcmc,
+                        name: item.kcmc,
                         location: item.skdd,
                         classes: item.skbj ?? item.skbjmc,
                         slotLabel: item.jcxx ? `第${item.jcxx}节` : undefined,
@@ -297,8 +300,10 @@ const normalizeScheduleSlots = (raw: any): Map<string, CourseSlot[]> => {
             item.kcmc ??
             item.title ??
             item.course_name ??
-            item.className ??
-            '课程';
+            item.className;
+        
+        // 如果没有课程名称，跳过
+        if (!name) return;
 
         const courseInfo: CourseSlot = {
             course: name,
@@ -345,15 +350,22 @@ const normalizeScheduleSlots = (raw: any): Map<string, CourseSlot[]> => {
     return slotMap;
 };
 
+type BindAccountInfo = {
+    username: string;
+    password: string;
+} | null;
+
 function FilterScreen() {
     const router = useRouter();
-    const termOptions = useMemo(() => {
-        const currentYear = new Date().getFullYear();
-        const nextYear = currentYear + 1;
-        const label = `${currentYear}-${nextYear}`;
-        return [{label, value: label, year: currentYear, semester: 0}];
-    }, []);
-    const selectedTerm = termOptions[0];
+    const currentYear = new Date().getFullYear();
+    
+    // 当前学期信息
+    const selectedTerm = useMemo(() => ({
+        label: `${currentYear}-${currentYear + 1} 学年第一学期`,
+        year: currentYear,
+        semester: 0,
+    }), [currentYear]);
+    
     const TOTAL_WEEKS = 30;
     
     // 根据当前日期自动计算默认周次
@@ -369,6 +381,10 @@ function FilterScreen() {
     );
     const [weekNumber, setWeekNumber] = useState(defaultWeek);
     const [weekPickerVisible, setWeekPickerVisible] = useState(false);
+    const weekScrollRef = useRef<ScrollView>(null);
+    
+    // 周次选择器每项的高度
+    const WEEK_ITEM_HEIGHT = 32;
     const [scheduleLoading, setScheduleLoading] = useState(false);
     const [scheduleError, setScheduleError] = useState<string | null>(null);
     const [scheduleData, setScheduleData] = useState<any>(null);
@@ -380,6 +396,83 @@ function FilterScreen() {
     const [studentList, setStudentList] = useState<Student[]>([]);
     const [studentListLoading, setStudentListLoading] = useState(false);
     
+    // 绑定账号信息
+    const [bindAccount, setBindAccount] = useState<BindAccountInfo>(null);
+    const [bindAccountLoading, setBindAccountLoading] = useState(true);
+    
+    // 课表背景设置
+    const [scheduleBgId, setScheduleBgId] = useState('default');
+    const [scheduleBgImage, setScheduleBgImage] = useState<string | null>(null);
+    const scheduleBg = useMemo(() => 
+        SCHEDULE_BACKGROUNDS.find(bg => bg.id === scheduleBgId) || SCHEDULE_BACKGROUNDS[0],
+        [scheduleBgId]
+    );
+    
+    // 上课时间设置
+    const [showClassTime, setShowClassTime] = useState(false);
+    const [classTimes, setClassTimes] = useState(DEFAULT_CLASS_TIMES);
+    
+    // 每次页面获得焦点时重新加载设置（用户可能在设置页修改了）
+    useFocusEffect(
+        useCallback(() => {
+            const loadSettings = async () => {
+                try {
+                    const savedBg = await AsyncStorage.getItem(SCHEDULE_BG_STORAGE_KEY);
+                    const savedImage = await AsyncStorage.getItem(SCHEDULE_BG_IMAGE_KEY);
+                    const savedShowTime = await AsyncStorage.getItem(SCHEDULE_SHOW_TIME_KEY);
+                    const savedTimes = await AsyncStorage.getItem(SCHEDULE_TIME_STORAGE_KEY);
+                    
+                    if (savedBg) {
+                        setScheduleBgId(savedBg);
+                    }
+                    setScheduleBgImage(savedImage);
+                    setShowClassTime(savedShowTime === 'true');
+                    if (savedTimes) {
+                        setClassTimes(JSON.parse(savedTimes));
+                    }
+                } catch (e) {
+                    console.error('加载设置失败:', e);
+                }
+            };
+            loadSettings();
+        }, [])
+    );
+    
+    // 获取绑定的教务账号
+    const fetchBindAccount = useCallback(async () => {
+        try {
+            const token = await AsyncStorage.getItem('access_token');
+            if (!token) {
+                setBindAccountLoading(false);
+                return;
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/bindaccount/jwxt/with-password`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+
+            if (response.ok) {
+                const data: any = await response.json();
+                if (data) {
+                    setBindAccount({
+                        username: data.username,
+                        password: data.password,
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('获取绑定账号失败:', e);
+        } finally {
+            setBindAccountLoading(false);
+        }
+    }, []);
+    
+    useEffect(() => {
+        fetchBindAccount();
+    }, [fetchBindAccount]);
+    
     useEffect(() => {
         setActiveSlotDetail(null);
         setStudentList([]);
@@ -387,7 +480,7 @@ function FilterScreen() {
     
     // 获取学生列表
     useEffect(() => {
-        if (!activeSlotDetail) {
+        if (!activeSlotDetail || !bindAccount) {
             setStudentList([]);
             return;
         }
@@ -403,15 +496,15 @@ function FilterScreen() {
         const fetchStudentList = async () => {
             setStudentListLoading(true);
             try {
-                const response = await fetch(`${API_BASE_URL}/api/schedule/userinfo`, {
+                const response = await fetch(`${SCHEDULE_API_URL}/api/schedule/userinfo`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         Accept: 'application/json',
                     },
                     body: JSON.stringify({
-                        username: '202314020131',
-                        password: '200587Yyq__',
+                        username: bindAccount.username,
+                        password: bindAccount.password,
                         year: String(selectedTerm?.year ?? '2025'),
                         skbj: skbj,
                     }),
@@ -439,9 +532,19 @@ function FilterScreen() {
         fetchStudentList();
         
         return () => { isCancelled = true; };
-    }, [activeSlotDetail, selectedTerm]);
+    }, [activeSlotDetail, selectedTerm, bindAccount]);
 
     useEffect(() => {
+        // 等待绑定账号加载完成
+        if (bindAccountLoading) return;
+        
+        // 如果没有绑定账号，显示提示
+        if (!bindAccount) {
+            setScheduleError('请先绑定教务系统账号');
+            setScheduleLoading(false);
+            return;
+        }
+        
         // 清除旧数据，确保显示加载状态
         setScheduleData(null);
         
@@ -453,15 +556,15 @@ function FilterScreen() {
             console.log(`[我的课表] 开始请求第 ${weekNumber} 周的课表...`);
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/schedule`, {
+                const response = await fetch(`${SCHEDULE_API_URL}/api/schedule`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         Accept: 'application/json',
                     },
                     body: JSON.stringify({
-                        username: '202314020131',
-                        password: '200587Yyq__',
+                        username: bindAccount.username,
+                        password: bindAccount.password,
                         year: String(selectedTerm?.year ?? '2025'),
                         semester: String(selectedTerm?.semester ?? '0'),
                         week: String(weekNumber),
@@ -491,7 +594,7 @@ function FilterScreen() {
         fetchSchedule();
 
         return () => { isCancelled = true; };
-    }, [weekNumber, selectedTerm]);
+    }, [weekNumber, selectedTerm, bindAccount, bindAccountLoading]);
 
     const days = useMemo(() => {
         const today = new Date();
@@ -570,68 +673,69 @@ function FilterScreen() {
     return (
         <View style={styles.safeArea}>
             <View style={[styles.headerBar, { paddingTop: insets.top + 12 }]}>
-                <View style={styles.headerCenter}>
-                    <Text style={styles.headerTermText}>{selectedTerm.label}学年第一学期</Text>
-                    <Pressable 
-                        style={styles.weekPickerTrigger}
-                        onPress={() => setWeekPickerVisible(true)}
-                    >
-                        <Text style={styles.weekText}>第{weekNumber}周</Text>
-                        <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
-                            <Path
-                                d="M6 9l6 6 6-6"
-                                stroke="#fff"
-                                strokeWidth={2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                        </Svg>
-                        {scheduleLoading && (
-                            <Text style={styles.headerStatusText}> 加载中...</Text>
-                        )}
-                    </Pressable>
+                <View style={styles.headerLeft}>
+                    <Text style={styles.headerTermText}>{selectedTerm.label}</Text>
                 </View>
-                <Pressable style={styles.settingsBtn} onPress={() => {}}>
-                    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                <Pressable 
+                    style={styles.headerRight}
+                    onPress={() => setWeekPickerVisible(true)}
+                >
+                    <Text style={styles.weekText}>第{weekNumber}周</Text>
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
                         <Path
-                            d="M12 15a3 3 0 100-6 3 3 0 000 6z"
+                            d="M6 9l6 6 6-6"
                             stroke="#fff"
-                            strokeWidth={1.5}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        />
-                        <Path
-                            d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"
-                            stroke="#fff"
-                            strokeWidth={1.5}
+                            strokeWidth={2}
                             strokeLinecap="round"
                             strokeLinejoin="round"
                         />
                     </Svg>
+                    {scheduleLoading && (
+                        <Text style={styles.headerStatusText}> 加载中...</Text>
+                    )}
                 </Pressable>
             </View>
-            <View style={[styles.tableContainer, { marginBottom: insets.bottom + 56 + (sjhjInfo.length > 0 ? 56 : 0) }]}>
-                {/* 表头 */}
-                <View style={styles.tableHeaderRow}>
-                    <View style={[styles.headerCell, styles.periodColumn]}>
-                        <Text style={styles.headerText}>{new Date().getMonth() + 1}月</Text>
-                    </View>
-                    {days.map((day) => (
-                        <View key={day.label} style={styles.headerCell}>
-                            <Text style={styles.dayDate}>{day.date}</Text>
-                            <Text style={styles.dayLabel}>{day.label}</Text>
-                        </View>
-                    ))}
-                </View>
-                {/* 表格内容 */}
-                <View 
-                    style={styles.tableBody}
-                    onLayout={(e) => setRowHeight(e.nativeEvent.layout.height / 10)}
+            <View style={styles.scrollWrapper}>
+                {/* 背景图片层 */}
+                {scheduleBgImage && (
+                    <ImageBackground
+                        source={{ uri: scheduleBgImage }}
+                        style={styles.bgImageLayer}
+                        resizeMode="cover"
+                    />
+                )}
+                <ScrollView 
+                    style={[styles.scrollContainer, { marginBottom: insets.bottom + 56 }]}
+                    showsVerticalScrollIndicator={false}
                 >
-                    {allPeriods.map((period) => (
+                <View style={[styles.tableContainer, { backgroundColor: scheduleBgImage ? 'transparent' : scheduleBg.color }]}>
+                    {/* 表头 */}
+                    <View style={styles.tableHeaderRow}>
+                        <View style={[styles.headerCell, styles.periodColumn]}>
+                            <Text style={styles.monthNumber}>{new Date().getMonth() + 1}</Text>
+                            <Text style={styles.monthLabel}>月</Text>
+                        </View>
+                        {days.map((day) => (
+                            <View key={day.label} style={styles.headerCell}>
+                                <Text style={styles.dayDate}>{day.date}</Text>
+                                <Text style={styles.dayLabel}>{day.label}</Text>
+                            </View>
+                        ))}
+                    </View>
+                    {/* 表格内容 */}
+                    <View 
+                        style={styles.tableBody}
+                        onLayout={(e) => setRowHeight(e.nativeEvent.layout.height / 10)}
+                    >
+                    {allPeriods.map((period) => {
+                        const classTime = classTimes.find(t => t.period === period);
+                        return (
                         <View key={period} style={styles.tableRow}>
                             <View style={[styles.cell, styles.periodColumn]}>
                                 <Text style={styles.periodText}>{period}</Text>
+                                {showClassTime && classTime && (
+                                    <Text style={styles.periodTime}>{classTime.time}</Text>
+                                )}
                             </View>
                             {days.map((day, dayIndex) => {
                                 const cellKey = `${period}-${dayIndex}`;
@@ -694,30 +798,34 @@ function FilterScreen() {
                                 );
                             })}
                         </View>
-                    ))}
+                    );})}
+                    </View>
                 </View>
-            </View>
-            {/* 备注信息 - 固定在底部导航上方，可上下滑动 */}
-            {sjhjInfo.length > 0 && (
-                <View style={[styles.remarksContainer, { bottom: insets.bottom + 56 }]}>
-                    <Text style={styles.remarksTitle}>备注：</Text>
-                    <ScrollView 
-                        style={styles.remarksScroll}
-                        showsVerticalScrollIndicator={false}
-                    >
+                {/* 备注信息 - 放在课表下方，随课表一起滚动 */}
+                {sjhjInfo.length > 0 && (
+                    <View style={[styles.remarksContainer, scheduleBgImage && { backgroundColor: 'transparent' }]}>
+                        <Text style={styles.remarksTitle}>备注：</Text>
                         {sjhjInfo.map((item, index) => (
-                            <Text key={index} style={styles.remarksText} numberOfLines={1}>
+                            <Text key={index} style={styles.remarksText}>
                                 {index + 1}、{item}
                             </Text>
                         ))}
-                    </ScrollView>
-                </View>
-            )}
+                    </View>
+                )}
+                </ScrollView>
+            </View>
             <Modal
                 visible={weekPickerVisible}
                 animationType="slide"
                 transparent
                 onRequestClose={() => setWeekPickerVisible(false)}
+                onShow={() => {
+                    // 打开弹窗时滚动到当前周的位置
+                    setTimeout(() => {
+                        const scrollY = Math.max(0, (weekNumber - 3) * WEEK_ITEM_HEIGHT);
+                        weekScrollRef.current?.scrollTo({ y: scrollY, animated: false });
+                    }, 50);
+                }}
             >
                 <View style={styles.weekPickerModalContainer}>
                     <Pressable 
@@ -726,46 +834,53 @@ function FilterScreen() {
                     />
                     <View style={styles.weekPickerContent}>
                         <View style={styles.weekPickerHeader}>
-                            <Text style={styles.weekPickerTitle}>选择周次</Text>
+                            <Text style={styles.weekPickerTitle}>
+                                {selectedTerm.label} 第{weekNumber}周{weekNumber === defaultWeek ? ' (本周)' : ''}
+                            </Text>
                             <Pressable onPress={() => setWeekPickerVisible(false)}>
-                                <Text style={styles.weekPickerClose}>完成</Text>
+                                <Text style={styles.weekPickerClose}>确 定</Text>
                             </Pressable>
                         </View>
                         <ScrollView 
+                            ref={weekScrollRef}
                             style={styles.weekPickerScroll}
                             showsVerticalScrollIndicator={false}
                         >
-                            {weekOptions.map((option) => (
-                                <Pressable
-                                    key={option.value}
-                                    style={[
-                                        styles.weekPickerItem,
-                                        weekNumber === Number(option.value) && styles.weekPickerItemActive
-                                    ]}
-                                    onPress={() => {
-                                        setWeekNumber(Number(option.value));
-                                        setWeekPickerVisible(false);
-                                    }}
-                                >
-                                    <Text style={[
-                                        styles.weekPickerItemText,
-                                        weekNumber === Number(option.value) && styles.weekPickerItemTextActive
-                                    ]}>
-                                        {option.label}
-                                    </Text>
-                                    {weekNumber === Number(option.value) && (
-                                        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-                                            <Path
-                                                d="M20 6L9 17l-5-5"
-                                                stroke="#1e3a8a"
-                                                strokeWidth={2}
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            />
-                                        </Svg>
-                                    )}
-                                </Pressable>
-                            ))}
+                            {weekOptions.map((option) => {
+                                const isCurrentWeek = Number(option.value) === defaultWeek;
+                                const isSelected = weekNumber === Number(option.value);
+                                return (
+                                    <Pressable
+                                        key={option.value}
+                                        style={[
+                                            styles.weekPickerItem,
+                                            isSelected && styles.weekPickerItemActive
+                                        ]}
+                                        onPress={() => {
+                                            setWeekNumber(Number(option.value));
+                                            setWeekPickerVisible(false);
+                                        }}
+                                    >
+                                        <Text style={[
+                                            styles.weekPickerItemText,
+                                            isSelected && styles.weekPickerItemTextActive
+                                        ]}>
+                                            {option.label}{isCurrentWeek ? ' (本周)' : ''}
+                                        </Text>
+                                        {isSelected && (
+                                            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                                                <Path
+                                                    d="M20 6L9 17l-5-5"
+                                                    stroke="#1684ff"
+                                                    strokeWidth={2}
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                />
+                                            </Svg>
+                                        )}
+                                    </Pressable>
+                                );
+                            })}
                         </ScrollView>
                     </View>
                 </View>
@@ -899,38 +1014,46 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f8fafc',
     },
-    tableContainer: {
+    scrollWrapper: {
         flex: 1,
+        position: 'relative',
+    },
+    bgImageLayer: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    scrollContainer: {
+        flex: 1,
+    },
+    tableContainer: {
         backgroundColor: '#fff',
         borderTopWidth: 1,
         borderBottomWidth: 1,
         borderColor: '#e2e8f0',
     },
     tableBody: {
-        flex: 1,
+        minHeight: 700,
     },
     headerBar: {
         backgroundColor: '#1684ff',
-        paddingVertical: 10,
+        paddingVertical: 14,
         paddingHorizontal: 16,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'space-between',
     },
-    headerCenter: {
-        flex: 1,
+    headerLeft: {
+        flexDirection: 'row',
         alignItems: 'center',
     },
-    headerTermText: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: '#fff',
-        marginBottom: 4,
-    },
-    weekPickerTrigger: {
+    headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
+    },
+    headerTermText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#fff',
     },
     weekText: {
         fontSize: 15,
@@ -946,11 +1069,6 @@ const styles = StyleSheet.create({
         color: '#fca5a5',
         fontWeight: '600',
     },
-    settingsBtn: {
-        position: 'absolute',
-        right: 16,
-        padding: 4,
-    },
     weekPickerModalContainer: {
         flex: 1,
         justifyContent: 'flex-end',
@@ -963,7 +1081,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
-        maxHeight: '60%',
+        maxHeight: '40%',
     },
     weekPickerHeader: {
         flexDirection: 'row',
@@ -975,17 +1093,19 @@ const styles = StyleSheet.create({
         borderBottomColor: '#e2e8f0',
     },
     weekPickerTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: '#0f172a',
+        fontSize: 15,
+        fontWeight: '500',
+        color: '#1684ff',
+        flex: 1,
     },
     weekPickerClose: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#1e3a8a',
+        color: '#1684ff',
+        letterSpacing: 4,
     },
     weekPickerScroll: {
-        paddingHorizontal: 8,
+        paddingHorizontal: 12,
         paddingVertical: 8,
     },
     weekPickerItem: {
@@ -993,9 +1113,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderRadius: 10,
-        marginVertical: 2,
+        paddingVertical: 8,
+        borderRadius: 6,
     },
     weekPickerItemActive: {
         backgroundColor: '#dbeafe',
@@ -1005,7 +1124,7 @@ const styles = StyleSheet.create({
         color: '#334155',
     },
     weekPickerItemTextActive: {
-        color: '#1e3a8a',
+        color: '#1684ff',
         fontWeight: '600',
     },
     detailModalContainer: {
@@ -1132,11 +1251,22 @@ const styles = StyleSheet.create({
         flex: 0,
         width: 36,
         minWidth: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     headerText: {
-        fontSize: 11,
+        fontSize: 13,
         fontWeight: '600',
-        color: '#334155',
+        color: '#0f172a',
+    },
+    monthNumber: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#0f172a',
+    },
+    monthLabel: {
+        fontSize: 10,
+        color: '#64748b',
     },
     dayLabel: {
         fontSize: 10,
@@ -1183,6 +1313,12 @@ const styles = StyleSheet.create({
         color: '#334155',
         textAlign: 'center',
     },
+    periodTime: {
+        fontSize: 8,
+        color: '#94a3b8',
+        textAlign: 'center',
+        marginTop: 2,
+    },
     courseName: {
         fontSize: 9,
         fontWeight: '600',
@@ -1205,29 +1341,22 @@ const styles = StyleSheet.create({
         lineHeight: 10,
     },
     remarksContainer: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        height: 56,
         backgroundColor: '#fff',
         borderTopWidth: 1,
         borderTopColor: '#e2e8f0',
-        paddingHorizontal: 12,
-        paddingTop: 8,
-        paddingBottom: 4,
-    },
-    remarksScroll: {
-        flex: 1,
+        paddingHorizontal: 16,
+        paddingVertical: 16,
     },
     remarksTitle: {
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '600',
-        color: '#b91c1c',
-        marginBottom: 4,
+        color: '#374151',
+        marginBottom: 12,
     },
     remarksText: {
         fontSize: 13,
-        color: '#b91c1c',
-        lineHeight: 20,
+        color: '#6b7280',
+        lineHeight: 22,
+        marginBottom: 4,
     },
 });

@@ -36,10 +36,10 @@ const scheduleMatches = [
 
 const tabs: TabItem[] = [
   { label: '首页', route: '/home', Icon: HomeIcon, matchPrefixes: homeMatches },
-  { label: '我的课表', route: '/filter', Icon: FilterIcon, matchPrefixes: scheduleMatches },
   { label: '发布', route: '/listing', Icon: PlusIcon, matchPrefixes: ['/listing'] },
+  { label: '我的课表', route: '/filter', Icon: FilterIcon, matchPrefixes: scheduleMatches },
   { label: '消息', route: '/inbox', Icon: InboxIcon, matchPrefixes: ['/inbox'] },
-  { label: '我的', route: '/profile', Icon: ProfileIcon, matchPrefixes: ['/profile'] },
+  { label: '我的', route: '/profile', Icon: ProfileIcon, matchPrefixes: ['/profile', '/account-security', '/settings'] },
 ];
 
 export function BottomTabs() {

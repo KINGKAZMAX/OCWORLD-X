@@ -1,5 +1,4 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const messages = [
   { title: '教务通知', preview: '本周五前完成选课确认，点击查看详情。', time: '09:15' },
@@ -8,10 +7,8 @@ const messages = [
 ];
 
 export default function InboxScreen() {
-  const insets = useSafeAreaInsets();
-
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top || 0 }]}>
+    <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         {messages.map((message) => (
           <View key={message.title} style={styles.card}>

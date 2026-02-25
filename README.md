@@ -19,6 +19,8 @@
    npx expo start --clear
    ```
 ## 目录 & 文件说明
+cd android
+./gradlew assembleRelease
 
 - `app/`：Expo Router 的页面目录。现在只有 `index.tsx`（主界面）和 `_layout.tsx`（路由结构）。
 - `assets/`：图标、Splash 等静态资源，启动器会自动读取 `app.json` 中引用的图片。

@@ -1,7 +1,9 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { router, Stack } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL } from '../config/api';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -10,7 +12,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async () => {
+  const handleLogin = useCallback(async () => {
     if (!email || !password) {
       setError('请输入校园邮箱和密码');
       return;
@@ -19,66 +21,113 @@ export default function LoginScreen() {
     setError('');
     setLoading(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      console.log('登录成功，准备跳转到 /home');
-      // 使用 push 而不是 replace，避免路由栈问题
-      router.push('/home');
+      const response = await fetch(`${API_BASE_URL}/api/auth/login/json`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
+
+      const data: any = await response.json();
+
+      if (response.ok) {
+        // 保存 token
+        await AsyncStorage.setItem('access_token', data.access_token);
+        await AsyncStorage.setItem('refresh_token', data.refresh_token);
+        console.log('登录成功，准备跳转到 /home');
+        router.push('/home');
+      } else {
+        // 处理错误信息，确保是字符串
+        let errorMsg = '邮箱或密码错误';
+        if (data.detail) {
+          if (typeof data.detail === 'string') {
+            errorMsg = data.detail;
+          } else if (Array.isArray(data.detail)) {
+            // Pydantic 验证错误格式
+            errorMsg = data.detail.map((e: any) => e.msg || e.message || '验证错误').join(', ');
+          } else if (typeof data.detail === 'object' && data.detail.msg) {
+            errorMsg = data.detail.msg;
+          }
+        }
+        setError(errorMsg);
+      }
     } catch (e) {
       console.error('登录错误:', e);
-      setError('登录失败，请稍后再试');
+      setError('网络错误，请稍后再试');
     } finally {
       setLoading(false);
     }
-  };
+  }, [email, password]);
 
   return (
-    <View style={[styles.safeArea, { paddingTop: insets.top || 0, paddingBottom: insets.bottom || 0 }]}>
-      <View style={styles.container}>
-        <Text style={styles.title}>校园二手商城</Text>
-        <Text style={styles.subtitle}>登录后发现更多同学转让的优质好物</Text>
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <View style={[styles.safeArea, { paddingTop: insets.top || 0, paddingBottom: insets.bottom || 0 }]}>
+        <View style={styles.container}>
+          <Text style={styles.title}>校园二手商城</Text>
+          <Text style={styles.subtitle}>登录后发现更多同学转让的优质好物</Text>
 
-        <View style={styles.form}>
-          <Text style={styles.label}>校园邮箱</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="you@campus.edu"
-            placeholderTextColor="#9ca3af"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
+          <View style={styles.form}>
+            <Text style={styles.label}>校园邮箱</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="you@campus.edu"
+              placeholderTextColor="#9ca3af"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="off"
+              spellCheck={false}
+              textContentType="none"
+              blurOnSubmit={false}
+              value={email}
+              onChangeText={setEmail}
+            />
 
-          <Text style={styles.label}>密码</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="请输入密码"
-            placeholderTextColor="#9ca3af"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+            <Text style={styles.label}>密码</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="请输入密码"
+              placeholderTextColor="#9ca3af"
+              secureTextEntry
+              autoCorrect={false}
+              autoComplete="off"
+              textContentType="none"
+              blurOnSubmit={false}
+              value={password}
+              onChangeText={setPassword}
+            />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          <Pressable
-            style={({ pressed }) => [
-              styles.button,
-              pressed && !loading && { opacity: 0.9 },
-              loading && styles.buttonDisabled,
-            ]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            <Text style={styles.buttonText}>{loading ? '登录中...' : '登录'}</Text>
-          </Pressable>
+            <Pressable
+              style={({ pressed }) => [
+                styles.button,
+                pressed && !loading && { opacity: 0.9 },
+                loading && styles.buttonDisabled,
+              ]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>{loading ? '登录中...' : '登录'}</Text>
+            </Pressable>
 
-          <Pressable onPress={() => Alert.alert('提示', '请联系校园认证系统重置密码')}>
-            <Text style={styles.helperText}>忘记密码？联系校园认证系统重置</Text>
-          </Pressable>
+            <View style={styles.linkRow}>
+              <Pressable onPress={() => Alert.alert('提示', '请联系校园认证系统重置密码')}>
+                <Text style={styles.linkText}>忘记密码？</Text>
+              </Pressable>
+              <Pressable onPress={() => router.push('/register')}>
+                <Text style={styles.linkText}>注册账号</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </View>
-    </View>
+    </>
   );
 }
 
@@ -150,10 +199,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  helperText: {
-    marginTop: 12,
-    fontSize: 13,
+  linkRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  linkText: {
+    fontSize: 14,
     color: '#2563eb',
-    textAlign: 'center',
+    fontWeight: '500',
   },
 });
