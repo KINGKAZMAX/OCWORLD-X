@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456   # root 用户密码
+    ports:
+      - "3306:3306"                     # 宿主机:容器 端口映射
+    volumes:
+      - db_data:/var/lib/mysql          # 持久化数据
+    command: --default-authentication-plugin=mysql_native_password
+
+volumes:
+  db_data:
+
+
+
+
+
+
+
+
+
