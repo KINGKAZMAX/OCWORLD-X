@@ -11,6 +11,7 @@ type LLMProvider = "hermes" | "legacy";
 
 interface LLMCallOptions {
   sessionId?: string;
+  signal?: AbortSignal;
 }
 
 const demoFallbackSummary = {
@@ -206,7 +207,16 @@ function isProviderErrorText(content: string) {
   );
 }
 
-async function callLegacyLLM(systemPrompt: string, messages: { role: string; content: string }[], userMessage: string) {
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+async function callLegacyLLM(
+  systemPrompt: string,
+  messages: { role: string; content: string }[],
+  userMessage: string,
+  signal?: AbortSignal,
+) {
   const authToken = getEnvValue("ANTHROPIC_AUTH_TOKEN");
 
   if (!authToken) {
@@ -219,6 +229,7 @@ async function callLegacyLLM(systemPrompt: string, messages: { role: string; con
       "Content-Type": "application/json",
       "x-api-key": authToken,
     },
+    signal,
     body: JSON.stringify({
       model: getLegacyModel(),
       system: systemPrompt,
@@ -263,6 +274,7 @@ async function callHermesLLM(
   const response = await fetch(`${getHermesBaseUrl()}${HERMES_CHAT_COMPLETIONS_PATH}`, {
     method: "POST",
     headers,
+    signal: options?.signal,
     body: JSON.stringify({
       model: getHermesModel(),
       messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -282,7 +294,7 @@ async function callHermesLLM(
   }
 
   if (isProviderErrorText(content)) {
-    return callLegacyLLM(systemPrompt, messages, userMessage);
+    return callLegacyLLM(systemPrompt, messages, userMessage, options?.signal);
   }
 
   return parseResponseContent(content);
@@ -301,11 +313,15 @@ export async function callLLM(
 
   try {
     if (getProvider() === "legacy") {
-      return await callLegacyLLM(systemPrompt, messages, userMessage);
+      return await callLegacyLLM(systemPrompt, messages, userMessage, options?.signal);
     }
 
     return await callHermesLLM(systemPrompt, messages, userMessage, options);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+
     return buildMockResponse(userMessage);
   }
 }
