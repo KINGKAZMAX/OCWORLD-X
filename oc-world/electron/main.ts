@@ -1,0 +1,74 @@
+import { app, BrowserWindow } from "electron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc";
+import { loadLocalEnv } from "./services/env";
+import { hermesManager } from "./services/hermes-manager";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+loadLocalEnv({
+  files: [
+    process.env.OC_WORLD_ENV_FILE,
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(__dirname, "../.env"),
+    path.resolve(__dirname, "../../.env"),
+  ],
+});
+
+let quitting = false;
+
+function createWindow() {
+  const window = new BrowserWindow({
+    width: 1440,
+    height: 920,
+    minWidth: 1200,
+    minHeight: 800,
+    backgroundColor: "#0f172a",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.mjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  if (process.env.VITE_DEV_SERVER_URL) {
+    window.loadURL(process.env.VITE_DEV_SERVER_URL);
+    window.webContents.openDevTools({ mode: "detach" });
+    return;
+  }
+
+  window.loadFile(path.join(__dirname, "../dist/index.html"));
+}
+
+app.whenReady().then(() => {
+  registerIpcHandlers();
+  void hermesManager.start();
+  createWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on("before-quit", (event) => {
+  if (quitting) {
+    return;
+  }
+
+  quitting = true;
+  event.preventDefault();
+  unregisterIpcHandlers();
+  void hermesManager.stop().finally(() => {
+    app.quit();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});

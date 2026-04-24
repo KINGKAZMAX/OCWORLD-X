@@ -1,0 +1,53 @@
+import fs from "node:fs";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { loadLocalEnv, parseEnvFile } from "../electron/services/env";
+
+const touchedKeys = ["HERMES_API_KEY", "OC_DEMO_FORCE_MOCK_LLM", "CUSTOM_BASE_URL"] as const;
+const originalEnv = Object.fromEntries(touchedKeys.map((key) => [key, process.env[key]]));
+
+afterEach(() => {
+  for (const key of touchedKeys) {
+    const originalValue = originalEnv[key];
+
+    if (originalValue === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = originalValue;
+    }
+  }
+});
+
+describe("local env loading", () => {
+  it("parses dotenv-style key values without leaking comments", () => {
+    expect(
+      parseEnvFile(`
+        # comment
+        export HERMES_API_KEY=local-key
+        OC_DEMO_FORCE_MOCK_LLM=0 # disable mock
+        CUSTOM_BASE_URL="https://open.bigmodel.cn/api/anthropic#v1"
+      `),
+    ).toEqual({
+      HERMES_API_KEY: "local-key",
+      OC_DEMO_FORCE_MOCK_LLM: "0",
+      CUSTOM_BASE_URL: "https://open.bigmodel.cn/api/anthropic#v1",
+    });
+  });
+
+  it("loads an env file without overriding explicit process env", () => {
+    const dir = fs.mkdtempSync(path.join(process.cwd(), "tmp-env-test-"));
+    const envFile = path.join(dir, ".env");
+    fs.writeFileSync(envFile, "HERMES_API_KEY=file-key\nOC_DEMO_FORCE_MOCK_LLM=0\n", "utf8");
+
+    process.env.HERMES_API_KEY = "shell-key";
+    delete process.env.OC_DEMO_FORCE_MOCK_LLM;
+
+    const loadedFiles = loadLocalEnv({ files: [envFile] });
+
+    expect(loadedFiles).toEqual([envFile]);
+    expect(process.env.HERMES_API_KEY).toBe("shell-key");
+    expect(process.env.OC_DEMO_FORCE_MOCK_LLM).toBe("0");
+
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

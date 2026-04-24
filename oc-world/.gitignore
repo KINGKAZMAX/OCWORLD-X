@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+dist/
+dist-electron/
+node_modules/
+tmp-env-test-*/
