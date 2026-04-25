@@ -12,10 +12,11 @@ import {
   saveRelationship,
 } from "./services/memory";
 import { getStage } from "./services/relationship";
-import type { CharacterConfig, ChatSendPayload } from "../src/types";
+import type { CharacterConfig, ChatCancelPayload, ChatSendPayload } from "../src/types";
 
 const ipcChannels = {
   chatSendMessage: "chat:send-message",
+  chatCancelActive: "chat:cancel-active",
   chatGetGreeting: "chat:get-greeting",
   characterGetCurrent: "character:get-current",
   characterSaveCurrent: "character:save-current",
@@ -32,13 +33,21 @@ let registered = false;
 let detachHermesListener: (() => void) | null = null;
 const activeChatControllers = new Map<string, AbortController>();
 
-function getChatSessionKey(payload: ChatSendPayload) {
+function getChatSessionKey(payload: ChatCancelPayload) {
   return `${payload.userId}:${payload.characterId}`;
 }
 
-function abortActiveChat(payload: ChatSendPayload) {
-  const activeController = activeChatControllers.get(getChatSessionKey(payload));
-  activeController?.abort();
+function abortActiveChat(payload: ChatCancelPayload) {
+  const sessionKey = getChatSessionKey(payload);
+  const activeController = activeChatControllers.get(sessionKey);
+
+  if (!activeController) {
+    return false;
+  }
+
+  activeController.abort();
+  activeChatControllers.delete(sessionKey);
+  return true;
 }
 
 export function registerIpcHandlers() {
@@ -71,6 +80,7 @@ export function registerIpcHandlers() {
       }
     }
   });
+  ipcMain.handle(ipcChannels.chatCancelActive, async (_event, payload: ChatCancelPayload) => abortActiveChat(payload));
   ipcMain.handle(ipcChannels.chatGetGreeting, async (_event, payload) => generateGreeting(payload));
   ipcMain.handle(ipcChannels.characterGetCurrent, async (_event, characterId: string) => loadCharacter(characterId));
   ipcMain.handle(
@@ -112,6 +122,7 @@ export function unregisterIpcHandlers() {
   activeChatControllers.clear();
 
   ipcMain.removeHandler(ipcChannels.chatSendMessage);
+  ipcMain.removeHandler(ipcChannels.chatCancelActive);
   ipcMain.removeHandler(ipcChannels.chatGetGreeting);
   ipcMain.removeHandler(ipcChannels.characterGetCurrent);
   ipcMain.removeHandler(ipcChannels.characterSaveCurrent);

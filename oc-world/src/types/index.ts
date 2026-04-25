@@ -101,6 +101,11 @@ export interface ChatSendPayload {
   interrupt?: boolean;
 }
 
+export interface ChatCancelPayload {
+  characterId: string;
+  userId: string;
+}
+
 export interface ChatResponse {
   text: string;
   emotion: Emotion;

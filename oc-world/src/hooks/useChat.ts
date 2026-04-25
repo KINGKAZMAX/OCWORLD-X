@@ -50,6 +50,26 @@ export function useChat() {
     ttsRef.current.cancel();
   }, []);
 
+  const cancelActiveAgentTurn = useCallback(() => {
+    if (!window.ocWorld) {
+      return;
+    }
+
+    void window.ocWorld.chat.cancelActive({
+      characterId: defaultCharacterId,
+      userId: defaultUserId,
+    });
+  }, []);
+
+  const interruptActiveTurn = useCallback(() => {
+    cancelSpeech();
+    cancelActiveAgentTurn();
+    activeRequestIdRef.current = null;
+    isSendingRef.current = false;
+    setIsSending(false);
+    setEmotion("idle");
+  }, [cancelActiveAgentTurn, cancelSpeech]);
+
   const setTtsEnabled = useCallback((enabled: boolean) => {
     ttsEnabledRef.current = enabled;
     setTtsEnabledState(enabled);
@@ -214,13 +234,14 @@ export function useChat() {
     syncPendingMessages([...pendingMessagesRef.current, nextMessage]);
 
     if (isSendingRef.current) {
-      void submitPendingTurn();
-    } else {
-      scheduleSubmit();
+      activeRequestIdRef.current = null;
+      cancelActiveAgentTurn();
     }
 
+    scheduleSubmit();
+
     return null;
-  }, [cancelSpeech, scheduleSubmit, submitPendingTurn, syncPendingMessages]);
+  }, [cancelActiveAgentTurn, cancelSpeech, scheduleSubmit, syncPendingMessages]);
 
   const setDemoIntimacy = useCallback(async (intimacy: number) => {
     if (!window.ocWorld) {
@@ -248,6 +269,7 @@ export function useChat() {
       ttsEnabled,
       hermesStatus,
       cancelSpeech,
+      interruptActiveTurn,
       sendMessage,
       setTtsEnabled,
       setDemoIntimacy,
@@ -266,6 +288,7 @@ export function useChat() {
       ttsEnabled,
       hermesStatus,
       cancelSpeech,
+      interruptActiveTurn,
       sendMessage,
       setTtsEnabled,
       setDemoIntimacy,

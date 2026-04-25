@@ -5,6 +5,8 @@ const hermesStatusChangedChannel = "hermes:status-changed";
 contextBridge.exposeInMainWorld("ocWorld", {
   chat: {
     sendMessage: (payload: import("../src/types").ChatSendPayload) => ipcRenderer.invoke("chat:send-message", payload),
+    cancelActive: (payload: import("../src/types").ChatCancelPayload) =>
+      ipcRenderer.invoke("chat:cancel-active", payload),
     getGreeting: (payload: { characterId: string; userId: string }) =>
       ipcRenderer.invoke("chat:get-greeting", payload),
   },

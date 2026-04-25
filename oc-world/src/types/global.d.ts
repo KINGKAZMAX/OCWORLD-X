@@ -1,6 +1,7 @@
 import type {
   AirJellyContext,
   CharacterConfig,
+  ChatCancelPayload,
   ChatHistoryEntry,
   ChatResponse,
   ChatResult,
@@ -16,6 +17,7 @@ declare global {
     ocWorld?: {
       chat: {
         sendMessage: (payload: ChatSendPayload) => Promise<ChatResult>;
+        cancelActive: (payload: ChatCancelPayload) => Promise<boolean>;
         getGreeting: (payload: { characterId: string; userId: string }) => Promise<ChatResponse>;
       };
       character: {

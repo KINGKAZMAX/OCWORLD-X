@@ -8,6 +8,7 @@ export function ChatPanel({
   isSending,
   ttsEnabled,
   onCancelSpeech,
+  onInterrupt,
   onSend,
   onTtsEnabledChange,
 }: {
@@ -17,6 +18,7 @@ export function ChatPanel({
   isSending: boolean;
   ttsEnabled: boolean;
   onCancelSpeech: () => void;
+  onInterrupt: () => void;
   onSend: (message: string) => Promise<void>;
   onTtsEnabledChange: (enabled: boolean) => void;
 }) {
@@ -137,20 +139,37 @@ export function ChatPanel({
             />
             语音
           </label>
-          <button
-            type="submit"
-            disabled={!draft.trim()}
-            style={{
-              border: 0,
-              borderRadius: 14,
-              padding: "12px 20px",
-              background: draft.trim() ? "#f97316" : "rgba(148, 163, 184, 0.2)",
-              color: draft.trim() ? "#0f172a" : "#94a3b8",
-              fontWeight: 700,
-            }}
-          >
-            发送
-          </button>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              type="button"
+              onClick={onInterrupt}
+              disabled={!isSending && !ttsEnabled}
+              style={{
+                border: "1px solid rgba(148, 163, 184, 0.28)",
+                borderRadius: 14,
+                padding: "12px 16px",
+                background: isSending || ttsEnabled ? "rgba(15, 23, 42, 0.92)" : "rgba(148, 163, 184, 0.12)",
+                color: isSending || ttsEnabled ? "#e2e8f0" : "#64748b",
+                fontWeight: 700,
+              }}
+            >
+              停止
+            </button>
+            <button
+              type="submit"
+              disabled={!draft.trim()}
+              style={{
+                border: 0,
+                borderRadius: 14,
+                padding: "12px 20px",
+                background: draft.trim() ? "#f97316" : "rgba(148, 163, 184, 0.2)",
+                color: draft.trim() ? "#0f172a" : "#94a3b8",
+                fontWeight: 700,
+              }}
+            >
+              {isSending ? "追发" : "发送"}
+            </button>
+          </div>
         </div>
       </form>
     </section>

@@ -15,6 +15,7 @@ export function ChatPage() {
     pendingMessages,
     ttsEnabled,
     cancelSpeech,
+    interruptActiveTurn,
     sendMessage,
     setTtsEnabled,
     setDemoIntimacy,
@@ -55,6 +56,7 @@ export function ChatPage() {
           isSending={isSending}
           ttsEnabled={ttsEnabled}
           onCancelSpeech={cancelSpeech}
+          onInterrupt={interruptActiveTurn}
           onSend={async (message) => {
             await sendMessage(message);
           }}
