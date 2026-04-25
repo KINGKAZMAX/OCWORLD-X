@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { registerIpcHandlers, unregisterIpcHandlers } from "./ipc";
 import { loadLocalEnv } from "./services/env";
 import { hermesManager } from "./services/hermes-manager";
+import { prepareHermesRuntime } from "./services/hermes-runtime";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +44,13 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  prepareHermesRuntime({
+    userDataPath: app.getPath("userData"),
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    cwd: process.cwd(),
+    isPackaged: app.isPackaged,
+  });
   registerIpcHandlers();
   void hermesManager.start();
   createWindow();

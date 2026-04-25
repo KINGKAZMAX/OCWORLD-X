@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "prepare:hermes-runtime": "node scripts/prepare-hermes-runtime.mjs",
+    "pack:app": "npm run prepare:hermes-runtime && npm run build && electron-builder --dir",
+    "dist:app": "npm run prepare:hermes-runtime && npm run build && electron-builder",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -26,11 +29,60 @@
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.4.1",
     "electron": "^35.7.5",
+    "electron-builder": "^26.8.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-electron": "^0.29.0",
     "vite-plugin-electron-renderer": "^0.14.6",
     "vitest": "^3.1.2"
+  },
+  "build": {
+    "appId": "ai.pika.ocworld",
+    "productName": "OC World",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "hermes-agent",
+        "to": "hermes-agent",
+        "filter": [
+          "**/*",
+          "!**/.git/**",
+          "!**/__pycache__/**",
+          "!**/.pytest_cache/**",
+          "!**/.ruff_cache/**",
+          "!**/.mypy_cache/**",
+          "!**/.venv/**",
+          "!**/venv/**",
+          "!**/electron-dist/pyinstaller-build/**",
+          "!**/electron-dist/pyinstaller-spec/**",
+          "!**/ui-tui/node_modules/**",
+          "!**/website/node_modules/**"
+        ]
+      },
+      {
+        "from": "hermes-agent/node_modules",
+        "to": "hermes-agent/node_modules",
+        "filter": [
+          "**/*",
+          "!**/puppeteer-extra-plugin-stealth/evasions/*.app/**"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
   }
 }

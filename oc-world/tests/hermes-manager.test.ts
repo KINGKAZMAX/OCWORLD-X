@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHermesManager } from "../electron/services/hermes-manager";
@@ -154,6 +156,94 @@ describe("hermes manager", () => {
         }),
       }),
     );
+  });
+
+  it("prefers the installed runtime root and exposes bundled browser tools on PATH", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "oc-hermes-manager-"));
+    const hermesRoot = path.join(tempRoot, "hermes-agent");
+    const venvBin = path.join(hermesRoot, "venv", "bin");
+    const nodeBin = path.join(hermesRoot, "node_modules", ".bin");
+    fs.mkdirSync(path.join(hermesRoot, "hermes_cli"), { recursive: true });
+    fs.mkdirSync(venvBin, { recursive: true });
+    fs.mkdirSync(nodeBin, { recursive: true });
+    fs.writeFileSync(path.join(hermesRoot, "pyproject.toml"), "[project]\nname = \"hermes-agent\"\n", "utf8");
+    fs.writeFileSync(path.join(hermesRoot, "hermes_cli", "main.py"), "print('hermes')\n", "utf8");
+    fs.writeFileSync(path.join(venvBin, "python"), "#!/bin/sh\n", "utf8");
+    fs.writeFileSync(path.join(nodeBin, "agent-browser"), "#!/bin/sh\n", "utf8");
+
+    try {
+      const child = new FakeChildProcess(101);
+      const spawn = vi.fn().mockReturnValue(child);
+      const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      const manager = createManager({
+        spawn,
+        fetch,
+        env: {
+          HERMES_EXECUTABLE_PATH: undefined,
+          HERMES_EXECUTABLE_ARGS_JSON: undefined,
+          HERMES_BUNDLED_ROOT: hermesRoot,
+          HERMES_HOME: path.join(tempRoot, "hermes-home"),
+        },
+      });
+
+      await manager.start();
+      await flush();
+
+      const [executable, args, options] = spawn.mock.calls[0];
+      expect(executable).toBe(path.join(venvBin, "python"));
+      expect(args).toEqual([path.join(hermesRoot, "hermes_cli", "main.py"), "gateway", "run", "--replace"]);
+      expect(options).toEqual(
+        expect.objectContaining({
+          cwd: hermesRoot,
+          env: expect.objectContaining({
+            HERMES_HOME: path.join(tempRoot, "hermes-home"),
+          }),
+        }),
+      );
+      expect(String(options.env.PATH).split(path.delimiter)).toEqual(expect.arrayContaining([venvBin, nodeBin]));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers a bundled standalone Hermes executable when present", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "oc-hermes-manager-"));
+    const hermesRoot = path.join(tempRoot, "hermes-agent");
+    const bundledBinDir = path.join(hermesRoot, "electron-dist", "bin", "hermes");
+    const nodeBin = path.join(hermesRoot, "node_modules", ".bin");
+    fs.mkdirSync(path.join(hermesRoot, "hermes_cli"), { recursive: true });
+    fs.mkdirSync(bundledBinDir, { recursive: true });
+    fs.mkdirSync(nodeBin, { recursive: true });
+    fs.writeFileSync(path.join(hermesRoot, "pyproject.toml"), "[project]\nname = \"hermes-agent\"\n", "utf8");
+    fs.writeFileSync(path.join(hermesRoot, "hermes_cli", "main.py"), "print('hermes')\n", "utf8");
+    fs.writeFileSync(path.join(bundledBinDir, "hermes"), "#!/bin/sh\n", "utf8");
+
+    try {
+      const child = new FakeChildProcess(101);
+      const spawn = vi.fn().mockReturnValue(child);
+      const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+      const manager = createManager({
+        spawn,
+        fetch,
+        env: {
+          HERMES_EXECUTABLE_PATH: undefined,
+          HERMES_EXECUTABLE_ARGS_JSON: undefined,
+          HERMES_BUNDLED_ROOT: hermesRoot,
+          HERMES_HOME: path.join(tempRoot, "hermes-home"),
+        },
+      });
+
+      await manager.start();
+      await flush();
+
+      const [executable, args, options] = spawn.mock.calls[0];
+      expect(executable).toBe(path.join(bundledBinDir, "hermes"));
+      expect(args).toEqual(["gateway", "run", "--replace"]);
+      expect(options).toEqual(expect.objectContaining({ cwd: hermesRoot }));
+      expect(String(options.env.PATH).split(path.delimiter)).toContain(nodeBin);
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("restarts Hermes after repeated health-check failures", async () => {

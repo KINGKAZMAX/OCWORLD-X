@@ -125,13 +125,15 @@ function getHermesArgs(env: HermesEnv) {
   return parsed;
 }
 
-function findLocalHermesRoot() {
+function findLocalHermesRoot(env: HermesEnv) {
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
+    getEnvValue(env, "HERMES_RUNTIME_ROOT"),
+    getEnvValue(env, "HERMES_BUNDLED_ROOT"),
     path.resolve(process.cwd(), "hermes-agent"),
     path.resolve(moduleDir, "..", "hermes-agent"),
     path.resolve(moduleDir, "..", "..", "hermes-agent"),
-  ];
+  ].filter((value): value is string => Boolean(value));
 
   return candidates.find((candidate) => {
     return (
@@ -207,6 +209,22 @@ function findPythonExecutable(env: HermesEnv) {
   return candidates.find(isPythonSupported);
 }
 
+function getHermesExecutableName() {
+  return process.platform === "win32" ? "hermes.exe" : "hermes";
+}
+
+function findBundledHermesExecutable(hermesRoot: string) {
+  const executableName = getHermesExecutableName();
+  const candidates = [
+    path.join(hermesRoot, "electron-dist", "bin", "hermes", executableName),
+    path.join(hermesRoot, "electron-dist", "bin", executableName),
+    path.join(hermesRoot, "bin", "hermes", executableName),
+    path.join(hermesRoot, "bin", executableName),
+  ];
+
+  return candidates.find((candidate) => fs.existsSync(candidate));
+}
+
 function resolveHermesLaunchConfig(env: HermesEnv): HermesLaunchConfig | null {
   const configuredExecutable = getEnvValue(env, "HERMES_EXECUTABLE_PATH");
 
@@ -218,31 +236,42 @@ function resolveHermesLaunchConfig(env: HermesEnv): HermesLaunchConfig | null {
     };
   }
 
-  const hermesRoot = findLocalHermesRoot();
+  const hermesRoot = findLocalHermesRoot(env);
   if (!hermesRoot) {
     return null;
+  }
+
+  const hermesNodeBin = path.join(hermesRoot, "node_modules", ".bin");
+  const bundledExecutable = findBundledHermesExecutable(hermesRoot);
+  if (bundledExecutable) {
+    return {
+      executablePath: bundledExecutable,
+      args: DEFAULT_HERMES_ARGS,
+      cwd: hermesRoot,
+      env: getHermesLaunchEnv(env, [hermesNodeBin]),
+    };
   }
 
   const venvDirs = ["venv", ".venv"];
   for (const venvDir of venvDirs) {
     const venvBin = path.join(hermesRoot, venvDir, "bin");
-    const venvHermes = path.join(venvBin, "hermes");
-    if (fs.existsSync(venvHermes)) {
-      return {
-        executablePath: venvHermes,
-        args: DEFAULT_HERMES_ARGS,
-        cwd: hermesRoot,
-        env: getHermesLaunchEnv(env, [venvBin]),
-      };
-    }
-
     const venvPython = path.join(venvBin, "python");
     if (fs.existsSync(venvPython)) {
       return {
         executablePath: venvPython,
         args: [path.join(hermesRoot, "hermes_cli", "main.py"), ...DEFAULT_HERMES_ARGS],
         cwd: hermesRoot,
-        env: getHermesLaunchEnv(env, [venvBin]),
+        env: getHermesLaunchEnv(env, [venvBin, hermesNodeBin]),
+      };
+    }
+
+    const venvHermes = path.join(venvBin, "hermes");
+    if (fs.existsSync(venvHermes)) {
+      return {
+        executablePath: venvHermes,
+        args: DEFAULT_HERMES_ARGS,
+        cwd: hermesRoot,
+        env: getHermesLaunchEnv(env, [venvBin, hermesNodeBin]),
       };
     }
   }
@@ -256,7 +285,7 @@ function resolveHermesLaunchConfig(env: HermesEnv): HermesLaunchConfig | null {
     executablePath: pythonExecutable,
     args: [path.join(hermesRoot, "hermes_cli", "main.py"), ...DEFAULT_HERMES_ARGS],
     cwd: hermesRoot,
-    env: getHermesLaunchEnv(env),
+    env: getHermesLaunchEnv(env, [hermesNodeBin]),
   };
 }
 
