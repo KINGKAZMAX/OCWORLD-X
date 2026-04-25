@@ -58,6 +58,7 @@ export type RelationshipStage =
 
 export interface Relationship {
   userId: string;
+  userName: string;
   intimacy: number;
   stage: RelationshipStage;
   preferences: {
@@ -77,6 +78,7 @@ export interface CharacterConfig {
   catchphrase: string;
   relationshipSetup: string;
   avatarLabel: string;
+  avatarPath?: string;
 }
 
 export interface ChatHistoryEntry {
@@ -118,6 +120,33 @@ export interface ChatResult extends ChatResponse {
   source: AirJellyContext["source"];
 }
 
+export interface TtsSynthesizePayload {
+  text: string;
+  requestId?: string;
+  userId?: string;
+  interrupt?: boolean;
+}
+
+export interface TtsCancelPayload {
+  requestId?: string;
+}
+
+export interface TtsSynthesizeResult {
+  provider: "doubao";
+  requestId: string;
+  audioBase64: string;
+  mimeType: string;
+  encoding: string;
+  durationMs: number | null;
+}
+
+export interface TtsProviderStatus {
+  provider: "browser" | "doubao";
+  configured: boolean;
+  voiceType: string | null;
+  lastError: string | null;
+}
+
 export type HermesRuntimeState = "disabled" | "starting" | "healthy" | "unhealthy" | "crashed" | "stopped";
 
 export interface HermesRuntimeStatus {
@@ -138,4 +167,14 @@ export interface CreateCharacterInput {
   personality: string;
   catchphrase: string;
   relationshipSetup: string;
+}
+
+export interface ImageGenPayload {
+  prompt: string;
+}
+
+export interface ImageGenResult {
+  imageBase64: string;
+  mimeType: string;
+  savedPath?: string;
 }

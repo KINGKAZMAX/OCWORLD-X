@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld("ocWorld", {
     getGreeting: (payload: { characterId: string; userId: string }) =>
       ipcRenderer.invoke("chat:get-greeting", payload),
   },
+  tts: {
+    synthesize: (payload: import("../src/types").TtsSynthesizePayload) => ipcRenderer.invoke("tts:synthesize", payload),
+    cancelActive: (payload?: import("../src/types").TtsCancelPayload) => ipcRenderer.invoke("tts:cancel-active", payload),
+    getStatus: () => ipcRenderer.invoke("tts:get-status"),
+  },
   character: {
     getCurrent: (characterId: string) => ipcRenderer.invoke("character:get-current", characterId),
     saveCurrent: (payload: { characterId: string; character: import("../src/types").CharacterConfig }) =>
@@ -20,6 +25,8 @@ contextBridge.exposeInMainWorld("ocWorld", {
   },
   relationship: {
     get: (userId: string) => ipcRenderer.invoke("relationship:get", userId),
+    save: (payload: { userId: string; relationship: import("../src/types").Relationship }) =>
+      ipcRenderer.invoke("relationship:save", payload),
     setIntimacyForDemo: (payload: { userId: string; intimacy: number }) =>
       ipcRenderer.invoke("relationship:set-intimacy-for-demo", payload),
   },
@@ -43,5 +50,9 @@ contextBridge.exposeInMainWorld("ocWorld", {
         ipcRenderer.removeListener(hermesStatusChangedChannel, listener);
       };
     },
+  },
+  imageGen: {
+    generate: (payload: import("../src/types").ImageGenPayload) =>
+      ipcRenderer.invoke("image-gen:generate", payload),
   },
 });

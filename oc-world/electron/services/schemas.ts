@@ -45,6 +45,7 @@ const summarySchema = z.object({
 
 const relationshipSchema = z.object({
   userId: z.string(),
+  userName: z.string().default("你"),
   intimacy: z.number(),
   stage: z.enum(["stranger", "acquaintance", "friend", "close_friend", "soulmate"]),
   preferences: z.object({
@@ -70,6 +71,7 @@ const characterSchema = z.object({
   catchphrase: z.string(),
   relationshipSetup: z.string(),
   avatarLabel: z.string(),
+  avatarPath: z.string().optional(),
 });
 
 const historySchema = z.object({

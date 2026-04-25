@@ -2,6 +2,8 @@ import { BrowserWindow, ipcMain } from "electron";
 import { chat, generateGreeting } from "./services/chat-engine";
 import { getAirJellyContext } from "./services/airjelly";
 import { hermesManager } from "./services/hermes-manager";
+import { getTtsStatus, synthesizeSpeech } from "./services/tts";
+import { generateImage } from "./services/image-gen";
 import {
   listTimeline,
   loadCharacter,
@@ -12,26 +14,39 @@ import {
   saveRelationship,
 } from "./services/memory";
 import { getStage } from "./services/relationship";
-import type { CharacterConfig, ChatCancelPayload, ChatSendPayload } from "../src/types";
+import type {
+  CharacterConfig,
+  ChatCancelPayload,
+  ChatSendPayload,
+  ImageGenPayload,
+  TtsCancelPayload,
+  TtsSynthesizePayload,
+} from "../src/types";
 
 const ipcChannels = {
   chatSendMessage: "chat:send-message",
   chatCancelActive: "chat:cancel-active",
   chatGetGreeting: "chat:get-greeting",
+  ttsSynthesize: "tts:synthesize",
+  ttsCancelActive: "tts:cancel-active",
+  ttsGetStatus: "tts:get-status",
   characterGetCurrent: "character:get-current",
   characterSaveCurrent: "character:save-current",
   timelineList: "timeline:list",
   relationshipGet: "relationship:get",
+  relationshipSave: "relationship:save",
   relationshipSetIntimacyForDemo: "relationship:set-intimacy-for-demo",
   memorySummaries: "memory:summaries",
   memoryHistory: "memory:history",
   airjellyGetContext: "airjelly:get-context",
   hermesGetStatus: "hermes:get-status",
+  imageGenGenerate: "image-gen:generate",
 } as const;
 
 let registered = false;
 let detachHermesListener: (() => void) | null = null;
 const activeChatControllers = new Map<string, AbortController>();
+const activeTtsControllers = new Map<string, AbortController>();
 
 function getChatSessionKey(payload: ChatCancelPayload) {
   return `${payload.userId}:${payload.characterId}`;
@@ -48,6 +63,33 @@ function abortActiveChat(payload: ChatCancelPayload) {
   activeController.abort();
   activeChatControllers.delete(sessionKey);
   return true;
+}
+
+function getTtsRequestId(payload: TtsSynthesizePayload) {
+  return payload.requestId || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function abortActiveTts(payload: TtsCancelPayload = {}) {
+  if (payload.requestId) {
+    const activeController = activeTtsControllers.get(payload.requestId);
+
+    if (!activeController) {
+      return false;
+    }
+
+    activeController.abort();
+    activeTtsControllers.delete(payload.requestId);
+    return true;
+  }
+
+  const hadActiveTts = activeTtsControllers.size > 0;
+
+  for (const controller of activeTtsControllers.values()) {
+    controller.abort();
+  }
+
+  activeTtsControllers.clear();
+  return hadActiveTts;
 }
 
 export function registerIpcHandlers() {
@@ -82,6 +124,25 @@ export function registerIpcHandlers() {
   });
   ipcMain.handle(ipcChannels.chatCancelActive, async (_event, payload: ChatCancelPayload) => abortActiveChat(payload));
   ipcMain.handle(ipcChannels.chatGetGreeting, async (_event, payload) => generateGreeting(payload));
+  ipcMain.handle(ipcChannels.ttsSynthesize, async (_event, payload: TtsSynthesizePayload) => {
+    if (payload.interrupt !== false) {
+      abortActiveTts();
+    }
+
+    const requestId = getTtsRequestId(payload);
+    const controller = new AbortController();
+    activeTtsControllers.set(requestId, controller);
+
+    try {
+      return await synthesizeSpeech({ ...payload, requestId }, { signal: controller.signal });
+    } finally {
+      if (activeTtsControllers.get(requestId) === controller) {
+        activeTtsControllers.delete(requestId);
+      }
+    }
+  });
+  ipcMain.handle(ipcChannels.ttsCancelActive, async (_event, payload?: TtsCancelPayload) => abortActiveTts(payload));
+  ipcMain.handle(ipcChannels.ttsGetStatus, async () => getTtsStatus());
   ipcMain.handle(ipcChannels.characterGetCurrent, async (_event, characterId: string) => loadCharacter(characterId));
   ipcMain.handle(
     ipcChannels.characterSaveCurrent,
@@ -90,6 +151,7 @@ export function registerIpcHandlers() {
   );
   ipcMain.handle(ipcChannels.timelineList, async (_event, userId: string) => listTimeline(userId));
   ipcMain.handle(ipcChannels.relationshipGet, async (_event, userId: string) => loadRelationship(userId));
+  ipcMain.handle(ipcChannels.relationshipSave, async (_event, payload: { userId: string; relationship: import("../src/types").Relationship }) => saveRelationship(payload.userId, payload.relationship));
   ipcMain.handle(
     ipcChannels.relationshipSetIntimacyForDemo,
     async (_event, payload: { userId: string; intimacy: number }) => {
@@ -106,6 +168,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(ipcChannels.memoryHistory, async (_event, userId: string) => loadOCHistory(userId, 20));
   ipcMain.handle(ipcChannels.airjellyGetContext, async () => getAirJellyContext());
   ipcMain.handle(ipcChannels.hermesGetStatus, async () => hermesManager.getStatus());
+  ipcMain.handle(ipcChannels.imageGenGenerate, async (_event, payload: ImageGenPayload) => generateImage(payload));
 }
 
 export function unregisterIpcHandlers() {
@@ -120,17 +183,23 @@ export function unregisterIpcHandlers() {
     controller.abort();
   }
   activeChatControllers.clear();
+  abortActiveTts();
 
   ipcMain.removeHandler(ipcChannels.chatSendMessage);
   ipcMain.removeHandler(ipcChannels.chatCancelActive);
   ipcMain.removeHandler(ipcChannels.chatGetGreeting);
+  ipcMain.removeHandler(ipcChannels.ttsSynthesize);
+  ipcMain.removeHandler(ipcChannels.ttsCancelActive);
+  ipcMain.removeHandler(ipcChannels.ttsGetStatus);
   ipcMain.removeHandler(ipcChannels.characterGetCurrent);
   ipcMain.removeHandler(ipcChannels.characterSaveCurrent);
   ipcMain.removeHandler(ipcChannels.timelineList);
   ipcMain.removeHandler(ipcChannels.relationshipGet);
+  ipcMain.removeHandler(ipcChannels.relationshipSave);
   ipcMain.removeHandler(ipcChannels.relationshipSetIntimacyForDemo);
   ipcMain.removeHandler(ipcChannels.memorySummaries);
   ipcMain.removeHandler(ipcChannels.memoryHistory);
   ipcMain.removeHandler(ipcChannels.airjellyGetContext);
   ipcMain.removeHandler(ipcChannels.hermesGetStatus);
+  ipcMain.removeHandler(ipcChannels.imageGenGenerate);
 }

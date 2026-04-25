@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createBrowserTTS } from "../lib/tts";
+import { createAppTTS } from "../lib/tts";
 import type {
   CharacterConfig,
   ChatHistoryEntry,
@@ -44,7 +44,7 @@ export function useChat() {
   const activeRequestIdRef = useRef<string | null>(null);
   const isSendingRef = useRef(false);
   const ttsEnabledRef = useRef(true);
-  const ttsRef = useRef(createBrowserTTS());
+  const ttsRef = useRef(createAppTTS());
 
   const cancelSpeech = useCallback(() => {
     ttsRef.current.cancel();

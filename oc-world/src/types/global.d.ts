@@ -7,8 +7,14 @@ import type {
   ChatResult,
   ChatSendPayload,
   HermesRuntimeStatus,
+  ImageGenPayload,
+  ImageGenResult,
   MemorySummary,
   Relationship,
+  TtsCancelPayload,
+  TtsProviderStatus,
+  TtsSynthesizePayload,
+  TtsSynthesizeResult,
   TimelineItem,
 } from "./index";
 
@@ -20,6 +26,11 @@ declare global {
         cancelActive: (payload: ChatCancelPayload) => Promise<boolean>;
         getGreeting: (payload: { characterId: string; userId: string }) => Promise<ChatResponse>;
       };
+      tts: {
+        synthesize: (payload: TtsSynthesizePayload) => Promise<TtsSynthesizeResult>;
+        cancelActive: (payload?: TtsCancelPayload) => Promise<boolean>;
+        getStatus: () => Promise<TtsProviderStatus>;
+      };
       character: {
         getCurrent: (characterId: string) => Promise<CharacterConfig>;
         saveCurrent: (payload: { characterId: string; character: CharacterConfig }) => Promise<CharacterConfig>;
@@ -29,6 +40,7 @@ declare global {
       };
       relationship: {
         get: (userId: string) => Promise<Relationship>;
+        save: (payload: { userId: string; relationship: Relationship }) => Promise<Relationship>;
         setIntimacyForDemo: (payload: { userId: string; intimacy: number }) => Promise<Relationship>;
       };
       memory: {
@@ -41,6 +53,9 @@ declare global {
       hermes: {
         getStatus: () => Promise<HermesRuntimeStatus>;
         onStatusChanged: (callback: (status: HermesRuntimeStatus) => void) => () => void;
+      };
+      imageGen: {
+        generate: (payload: ImageGenPayload) => Promise<ImageGenResult>;
       };
     };
   }

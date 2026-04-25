@@ -50,6 +50,7 @@ export const DEFAULT_SUMMARIES: MemorySummary[] = [
 
 export const DEFAULT_RELATIONSHIP: Relationship = {
   userId: "user-001",
+  userName: "小智",
   intimacy: 65,
   stage: "friend",
   preferences: {
