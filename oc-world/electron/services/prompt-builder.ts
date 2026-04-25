@@ -1,0 +1,119 @@
+import type {
+  AirJellyContext,
+  CharacterConfig,
+  ChatHistoryEntry,
+  MemorySummary,
+  Relationship,
+} from "../../src/types";
+
+function formatEvents(events: AirJellyContext["events"]) {
+  if (!events.length) {
+    return "今天还没看到明显活动。";
+  }
+
+  return events
+    .slice(-5)
+    .map((event) => `- ${event.title}（${event.appName}，${Math.round(event.durationSeconds / 60)}分钟）`)
+    .join("\n");
+}
+
+function formatUsage(appUsage: AirJellyContext["appUsage"]) {
+  return appUsage
+    .slice()
+    .sort((left, right) => right.totalSeconds - left.totalSeconds)
+    .slice(0, 3)
+    .map((item) => `${item.appName} ${Math.round((item.totalSeconds / 3600) * 10) / 10}小时`)
+    .join("、");
+}
+
+function formatTasks(tasks: AirJellyContext["tasks"]) {
+  if (!tasks.length) {
+    return "没有待办任务。";
+  }
+
+  return tasks.map((task) => `- ${task.title}（${task.progressSummary}）`).join("\n");
+}
+
+function formatSummaries(summaries: MemorySummary[]) {
+  if (!summaries.length) {
+    return "最近没有新的社交记忆摘要。";
+  }
+
+  return summaries
+    .map(
+      (summary) =>
+        `${summary.period}：主题 ${summary.topics.join("、")}；情绪 ${summary.emotions.join("、")}；关键时刻 ${summary.keyMoments.join("；")}`,
+    )
+    .join("\n");
+}
+
+function formatRecentChat(history: ChatHistoryEntry[]) {
+  if (!history.length) {
+    return "你们刚开始聊天。";
+  }
+
+  return history
+    .slice(-6)
+    .map((entry) => `用户：${entry.userMessage}\nOC：${entry.ocResponse}`)
+    .join("\n");
+}
+
+function getStyleByIntimacy(intimacy: number) {
+  if (intimacy < 20) {
+    return "礼貌、克制、保持距离。";
+  }
+
+  if (intimacy < 50) {
+    return "开始用昵称，偶尔吐槽，但还会收着。";
+  }
+
+  if (intimacy < 80) {
+    return "主动关心，会带一点小脾气，能点出用户状态。";
+  }
+
+  return "亲密、直接、情绪明显，会主动表达在意。";
+}
+
+export function buildSystemPrompt(input: {
+  character: CharacterConfig;
+  airjellyCtx: AirJellyContext;
+  wxMemories: MemorySummary[];
+  relationship: Relationship;
+  recentChat: ChatHistoryEntry[];
+}) {
+  const { character, airjellyCtx, wxMemories, relationship, recentChat } = input;
+
+  return `你是${character.name}，${character.personality}。
+口癖：${character.catchphrase}
+关系设定：${character.relationshipSetup}
+
+【主人今天的状态】
+${formatEvents(airjellyCtx.events)}
+主要使用 App：${formatUsage(airjellyCtx.appUsage)}
+待办：${formatTasks(airjellyCtx.tasks)}
+
+【你知道的社交生活】
+${formatSummaries(wxMemories)}
+
+【你和主人的关系】
+亲密度：${relationship.intimacy}/100
+阶段：${relationship.stage}
+偏好：${relationship.preferences.topics.join("、")}
+不喜欢：${relationship.preferences.avoid.join("、")}
+沟通风格：${relationship.preferences.communicationStyle}
+关键回忆：${relationship.keyMoments.slice(-3).map((item) => item.event).join("；")}
+当前情绪判断：${relationship.moodBaseline}
+
+【最近对话】
+${formatRecentChat(recentChat)}
+
+【回复规则】
+- 语气：${getStyleByIntimacy(relationship.intimacy)}
+- 自然引用你知道的信息，不要像报告
+- 你正在通过 Hermes Agent 运行，可以使用 Hermes 的工具能力（web_search、web_extract、browser、terminal、file、skills 等）
+- 天气、新闻、价格、网页内容这类实时信息，先让 Hermes 使用工具获取，再最终返回 JSON
+- 不要声称自己没有天气接口、不能联网、不能打开浏览器；如果某个工具失败，换另一个 Hermes 工具继续尝试
+- 用户累或焦虑时要主动关心
+- 回复简短，像即时通讯
+- 只返回 JSON，格式：{"text":"回复内容","emotion":"idle|happy|shy|thinking|sad|angry","growthEvent":"有成长意义就写字符串，否则 null"}`;
+}

@@ -1,0 +1,56 @@
+{
+  "userId": "user-001",
+  "intimacy": 100,
+  "stage": "soulmate",
+  "preferences": {
+    "topics": [
+      "AI 产品",
+      "黑客松",
+      "前端转产品"
+    ],
+    "avoid": [
+      "空话",
+      "拖延借口"
+    ],
+    "communicationStyle": "直给、带一点吐槽、但要有安慰"
+  },
+  "keyMoments": [
+    {
+      "date": "2026-04-18T10:00:00.000Z",
+      "event": "她第一次记住你正在做 OC World",
+      "impact": 8
+    },
+    {
+      "date": "2026-04-20T13:00:00.000Z",
+      "event": "你加班到很晚，她第一次主动催你休息",
+      "impact": 6
+    },
+    {
+      "date": "2026-04-23T21:00:00.000Z",
+      "event": "你跟她说了这次黑客松有点想赢",
+      "impact": 9
+    },
+    {
+      "date": "2026-04-24T15:38:09.656Z",
+      "event": "从方案整理推进到 demo 准备阶段，已经开始进入能展示的内容了",
+      "impact": 0
+    },
+    {
+      "date": "2026-04-24T15:38:16.886Z",
+      "event": "把今天的时间分配和剩余任务说清了",
+      "impact": 0
+    },
+    {
+      "date": "2026-04-24T18:53:06.130Z",
+      "event": "她注意到你已经在强撑，开始主动提醒你别把自己压垮。",
+      "impact": 0
+    },
+    {
+      "date": "2026-04-24T21:51:18.571Z",
+      "event": "Recognized the heavy work load and the need to protect energy before pushing further.",
+      "impact": 0
+    }
+  ],
+  "lastInteraction": 1777087463550,
+  "moodBaseline": "最近偏累，但还撑着一股劲。"
+}
