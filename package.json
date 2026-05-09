@@ -4,9 +4,14 @@
   "private": true,
   "type": "module",
   "main": "dist-electron/main.js",
+  "bin": {
+    "ocworld": "dist-cli/cli/main.js"
+  },
   "scripts": {
-    "dev": "vite",
+    "dev": "npm run prepare:hermes-source && vite",
     "build": "tsc --noEmit && vite build",
+    "prepare:hermes-source": "node scripts/ensure-hermes-agent.mjs",
+    "build:cli": "tsc -p tsconfig.cli.json",
     "prepare:hermes-runtime": "node scripts/prepare-hermes-runtime.mjs",
     "pack:app": "npm run prepare:hermes-runtime && npm run build && electron-builder --dir",
     "dist:app": "npm run prepare:hermes-runtime && npm run build && electron-builder",
@@ -15,18 +20,26 @@
     "typecheck": "tsc --noEmit",
     "seed:demo": "tsx scripts/seed-demo-data.ts",
     "parse:wx": "tsx scripts/parse-wx-chat.ts",
-    "generate:summaries": "tsx scripts/generate-summaries.ts"
+    "generate:summaries": "tsx scripts/generate-summaries.ts",
+    "cli": "tsx cli/main.ts"
   },
   "dependencies": {
+    "bufferutil": "^4.1.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.1",
+    "utf-8-validate": "^6.0.6",
+    "ws": "^8.20.0",
     "zod": "^3.24.4"
+  },
+  "optionalDependencies": {
+    "@airjelly/sdk": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
     "@types/react": "^18.3.20",
     "@types/react-dom": "^18.3.7",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.4.1",
     "electron": "^35.7.5",
     "electron-builder": "^26.8.1",
@@ -47,6 +60,7 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "demos/**/*",
       "package.json"
     ],
     "extraResources": [

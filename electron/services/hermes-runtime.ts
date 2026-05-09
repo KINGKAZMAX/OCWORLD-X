@@ -24,10 +24,10 @@ const RUNTIME_DIR_NAME = "hermes-runtime";
 const HERMES_HOME_DIR_NAME = "hermes-home";
 const AGENT_BROWSER_HOME_DIR_NAME = "agent-browser-home";
 const INSTALL_MARKER_FILE = ".oc-world-runtime.json";
-const DEFAULT_MODEL = "glm-5.1";
+const DEFAULT_MODEL = "mimo-v2.5-pro";
 const DEFAULT_PROVIDER = "custom";
 const DEFAULT_API_MODE = "anthropic_messages";
-const DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/anthropic";
+const DEFAULT_BASE_URL = "https://token-plan-cn.xiaomimimo.com/anthropic";
 
 function getEnvValue(env: HermesEnv, key: string) {
   const value = env[key];
@@ -198,7 +198,8 @@ function seedHermesHome(env: HermesEnv, hermesHome: string) {
   fs.mkdirSync(hermesHome, { recursive: true });
 
   const configPath = path.join(hermesHome, "config.yaml");
-  if (!fs.existsSync(configPath)) {
+  const shouldRefreshConfig = getEnvValue(env, "OC_WORLD_REFRESH_HERMES_CONFIG") !== "0";
+  if (shouldRefreshConfig || !fs.existsSync(configPath)) {
     fs.writeFileSync(configPath, getHermesConfig(env), "utf8");
   }
 }

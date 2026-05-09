@@ -199,7 +199,8 @@ function createAudioElement(audioBase64: string, mimeType: string) {
   return new Audio(`data:${mimeType};base64,${audioBase64}`);
 }
 
-export function createAppTTS(win: Window | undefined = typeof window === "undefined" ? undefined : window) {
+export function
+createAppTTS(win: Window | undefined = typeof window === "undefined" ? undefined : window, characterId?: string) {
   const browserTTS = createBrowserTTS(win);
   let currentAudio: HTMLAudioElement | null = null;
   let runId = 0;
@@ -265,6 +266,7 @@ export function createAppTTS(win: Window | undefined = typeof window === "undefi
         const result = await remoteTTS.synthesize({
           text: chunk,
           requestId: `${Date.now()}-${currentRunId}-${index}`,
+          characterId,
           interrupt: true,
         });
 

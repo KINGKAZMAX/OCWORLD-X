@@ -1,14 +1,13 @@
 import type { ChatResponse, ChatResult, ChatSendPayload } from "../../src/types";
-import { getAirJellyContext } from "./airjelly";
+import { buildContextSnapshot } from "./context-snapshot";
+import { buildConfirmedProfileSummary } from "./growth-profile";
+import { runGrowthPipeline } from "./growth-pipeline";
+import { callLLM } from "./llm";
 import {
+  appendGrowthLog,
   appendOCHistory,
-  loadCharacter,
-  loadOCHistory,
-  loadRecentSummaries,
-  loadRelationship,
   saveRelationship,
 } from "./memory";
-import { callLLM } from "./llm";
 import { buildSystemPrompt } from "./prompt-builder";
 import { calculateIntimacyDelta, updateRelationshipState } from "./relationship";
 
@@ -35,29 +34,27 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 export async function chat(payload: ChatSendPayload, options: ChatOptions = {}): Promise<ChatResult> {
+  const dataRoot = process.cwd();
   const turnMessages = getTurnMessages(payload);
   const combinedUserMessage = turnMessages.join("\n");
 
   throwIfAborted(options.signal);
 
-  const [airjellyCtx, wxMemories, recentChat, relationship, character] = await Promise.all([
-    getAirJellyContext(),
-    loadRecentSummaries(payload.userId, 3),
-    loadOCHistory(payload.userId, 10),
-    loadRelationship(payload.userId),
-    loadCharacter(payload.characterId),
-  ]);
+  const snapshot = await buildContextSnapshot({
+    userId: payload.userId,
+    characterId: payload.characterId,
+    summariesLimit: 3,
+    recentChatLimit: 10,
+    dataRoot,
+  });
 
   const systemPrompt = buildSystemPrompt({
-    character,
-    airjellyCtx,
-    wxMemories,
-    relationship,
-    recentChat,
+    snapshot,
+    confirmedProfileSummary: buildConfirmedProfileSummary(snapshot.growthProfile),
   });
 
   const messages = [
-    ...recentChat.flatMap((entry) => [
+    ...snapshot.conversationState.recentChat.flatMap((entry) => [
       { role: "user", content: entry.userMessage },
       { role: "assistant", content: entry.ocResponse },
     ]),
@@ -74,24 +71,48 @@ export async function chat(payload: ChatSendPayload, options: ChatOptions = {}):
 
   throwIfAborted(options.signal);
 
-  const intimacyDelta = calculateIntimacyDelta(combinedUserMessage, relationship.intimacy);
-  const nextRelationship = updateRelationshipState(relationship, intimacyDelta, response.growthEvent);
+  const intimacyDelta = calculateIntimacyDelta(combinedUserMessage, snapshot.relationshipState.intimacy);
+  const nextRelationship = updateRelationshipState(snapshot.relationshipState, intimacyDelta, response.growthEvent);
 
   await Promise.all([
-    saveRelationship(payload.userId, nextRelationship),
-    appendOCHistory(payload.userId, {
-      timestamp: Date.now(),
-      userMessage: combinedUserMessage,
-      ocResponse: response.text,
-      emotion: response.emotion,
-    }),
+    saveRelationship(payload.userId, nextRelationship, dataRoot),
+    appendOCHistory(
+      payload.userId,
+      {
+        timestamp: Date.now(),
+        userMessage: combinedUserMessage,
+        ocResponse: response.text,
+        emotion: response.emotion,
+      },
+      dataRoot,
+    ),
   ]);
+
+  void runGrowthPipeline({
+    userId: payload.userId,
+    userMessage: combinedUserMessage,
+    ocResponse: response.text,
+    growthEvent: response.growthEvent,
+    snapshot,
+    dataRoot,
+  }).catch(async (error) => {
+    await appendGrowthLog(
+      payload.userId,
+      {
+        at: Date.now(),
+        stage: "growth-pipeline-error",
+        userMessage: combinedUserMessage,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      dataRoot,
+    );
+  });
 
   return {
     ...response,
     intimacy: nextRelationship.intimacy,
     stage: nextRelationship.stage,
-    source: airjellyCtx.source,
+    source: snapshot.realtimeContext.source,
   };
 }
 
@@ -99,28 +120,30 @@ export async function generateGreeting(payload: {
   characterId: string;
   userId: string;
 }): Promise<ChatResponse> {
-  const [airjellyCtx, relationship, character, recentChat, wxMemories] = await Promise.all([
-    getAirJellyContext(),
-    loadRelationship(payload.userId),
-    loadCharacter(payload.characterId),
-    loadOCHistory(payload.userId, 6),
-    loadRecentSummaries(payload.userId, 3),
-  ]);
+  const dataRoot = process.cwd();
+  const snapshot = await buildContextSnapshot({
+    userId: payload.userId,
+    characterId: payload.characterId,
+    summariesLimit: 3,
+    recentChatLimit: 6,
+    dataRoot,
+  });
 
   const systemPrompt = buildSystemPrompt({
-    character,
-    airjellyCtx,
-    wxMemories,
-    relationship,
-    recentChat,
+    snapshot,
+    confirmedProfileSummary: buildConfirmedProfileSummary(snapshot.growthProfile),
   });
 
-  return callLLM(systemPrompt, [
+  return callLLM(
+    systemPrompt,
+    [
+      {
+        role: "user",
+        content: "[系统指令] 主人刚打开应用。根据今天的状态，主动说一句欢迎语。",
+      },
+    ],
     {
-      role: "user",
-      content: "[系统指令] 主人刚打开应用。根据今天的状态，主动说一句欢迎语。",
+      sessionId: `${payload.userId}:${payload.characterId}:greeting`,
     },
-  ], {
-    sessionId: `${payload.userId}:${payload.characterId}:greeting`,
-  });
+  );
 }

@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createAppTTS } from "../lib/tts";
+import { createVoiceInput, type VoiceInputState } from "../lib/voice-input";
 import type {
   CharacterConfig,
   ChatHistoryEntry,
   ChatResult,
   Emotion,
+  GrowthInsight,
+  GrowthProfile,
   HermesRuntimeStatus,
   PendingChatMessage,
+  RecallHintEvent,
   Relationship,
+  RevealCandidate,
   TimelineItem,
 } from "../types";
 
 const defaultCharacterId = "char-001";
 const defaultUserId = "user-001";
+
+type RevealHint = (RevealCandidate & { text?: string; title?: string }) | null;
 
 const defaultHermesStatus: HermesRuntimeStatus = {
   state: "disabled",
@@ -27,6 +34,17 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function createEmptyProfile(): GrowthProfile {
+  return {
+    userId: defaultUserId,
+    updatedAt: 0,
+    goals: [],
+    strengths: [],
+    preferences: [],
+    openQuestions: [],
+  };
+}
+
 export function useChat() {
   const [character, setCharacter] = useState<CharacterConfig | null>(null);
   const [relationship, setRelationship] = useState<Relationship | null>(null);
@@ -37,14 +55,23 @@ export function useChat() {
   const [isSending, setIsSending] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<PendingChatMessage[]>([]);
   const [ttsEnabled, setTtsEnabledState] = useState(true);
+  const [voiceInputState, setVoiceInputState] = useState<VoiceInputState>("idle");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
   const [hermesStatus, setHermesStatus] = useState<HermesRuntimeStatus>(defaultHermesStatus);
+  const [activeReveal, setActiveReveal] = useState<RevealHint>(null);
+  const [growthInsights, setGrowthInsights] = useState<GrowthInsight[]>([]);
+  const [growthProfile, setGrowthProfile] = useState<GrowthProfile>(createEmptyProfile());
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [activeRecallHint, setActiveRecallHint] = useState<RecallHintEvent | null>(null);
   const pendingMessagesRef = useRef<PendingChatMessage[]>([]);
   const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestCounterRef = useRef(0);
   const activeRequestIdRef = useRef<string | null>(null);
   const isSendingRef = useRef(false);
   const ttsEnabledRef = useRef(true);
-  const ttsRef = useRef(createAppTTS());
+  const ttsRef = useRef(createAppTTS(undefined, defaultCharacterId));
+  const voiceInputRef = useRef(createVoiceInput());
+  const lastFinalVoiceTextRef = useRef("");
 
   const cancelSpeech = useCallback(() => {
     ttsRef.current.cancel();
@@ -59,6 +86,22 @@ export function useChat() {
       characterId: defaultCharacterId,
       userId: defaultUserId,
     });
+  }, []);
+
+  const refreshGrowthState = useCallback(async () => {
+    if (!window.ocWorld) {
+      return;
+    }
+
+    const [reveal, insights, profile] = await Promise.all([
+      window.ocWorld.growth.getLatestReveal(defaultUserId),
+      window.ocWorld.growth.listInsights(defaultUserId),
+      window.ocWorld.growth.getProfile(defaultUserId),
+    ]);
+
+    setActiveReveal(reveal);
+    setGrowthInsights(insights);
+    setGrowthProfile(profile);
   }, []);
 
   const interruptActiveTurn = useCallback(() => {
@@ -89,7 +132,7 @@ export function useChat() {
       return;
     }
 
-    const [loadedCharacter, loadedRelationship, loadedHistory, loadedTimeline, loadedGreeting, loadedHermesStatus] =
+    const [loadedCharacter, loadedRelationship, loadedHistory, loadedTimeline, loadedGreeting, loadedHermesStatus, loadedReveal, loadedInsights, loadedProfile] =
       await Promise.all([
         window.ocWorld.character.getCurrent(defaultCharacterId),
         window.ocWorld.relationship.get(defaultUserId),
@@ -97,6 +140,9 @@ export function useChat() {
         window.ocWorld.timeline.list(defaultUserId),
         window.ocWorld.chat.getGreeting({ characterId: defaultCharacterId, userId: defaultUserId }),
         window.ocWorld.hermes.getStatus().catch(() => defaultHermesStatus),
+        window.ocWorld.growth.getLatestReveal(defaultUserId),
+        window.ocWorld.growth.listInsights(defaultUserId),
+        window.ocWorld.growth.getProfile(defaultUserId),
       ]);
 
     setCharacter(loadedCharacter);
@@ -106,6 +152,9 @@ export function useChat() {
     setGreeting(loadedGreeting.text);
     setEmotion(loadedGreeting.emotion);
     setHermesStatus(loadedHermesStatus);
+    setActiveReveal(loadedReveal);
+    setGrowthInsights(loadedInsights);
+    setGrowthProfile(loadedProfile);
   }, []);
 
   useEffect(() => {
@@ -119,6 +168,7 @@ export function useChat() {
       }
 
       ttsRef.current.cancel();
+      void voiceInputRef.current.stop();
     };
   }, []);
 
@@ -130,6 +180,28 @@ export function useChat() {
     return window.ocWorld.hermes.onStatusChanged((status) => {
       setHermesStatus(status);
     });
+  }, []);
+
+  useEffect(() => {
+    if (!window.ocWorld) {
+      return;
+    }
+
+    const unsubscribe = window.ocWorld.recall.onHint((hint) => {
+      setActiveRecallHint(hint);
+    });
+    void window.ocWorld.recall.startPolling({
+      userId: defaultUserId,
+      characterId: defaultCharacterId,
+    });
+
+    return () => {
+      unsubscribe();
+      void window.ocWorld?.recall.stopPolling({
+        userId: defaultUserId,
+        characterId: defaultCharacterId,
+      });
+    };
   }, []);
 
   const submitPendingTurn = useCallback(async () => {
@@ -187,6 +259,7 @@ export function useChat() {
           : current,
       );
       setTimeline(await window.ocWorld.timeline.list(defaultUserId));
+      await refreshGrowthState();
 
       if (ttsEnabledRef.current) {
         ttsRef.current.speak(result.text);
@@ -205,7 +278,7 @@ export function useChat() {
         setIsSending(false);
       }
     }
-  }, [syncPendingMessages]);
+  }, [refreshGrowthState, syncPendingMessages]);
 
   const scheduleSubmit = useCallback(() => {
     if (submitTimerRef.current) {
@@ -243,6 +316,58 @@ export function useChat() {
     return null;
   }, [cancelActiveAgentTurn, cancelSpeech, scheduleSubmit, syncPendingMessages]);
 
+  const stopVoiceInput = useCallback(async () => {
+    await voiceInputRef.current.stop();
+    lastFinalVoiceTextRef.current = "";
+    setVoiceInputState(voiceInputRef.current.isSupported() ? "idle" : "unsupported");
+  }, []);
+
+  const startVoiceInput = useCallback(async () => {
+    if (!voiceInputRef.current.isSupported()) {
+      setVoiceInputState("unsupported");
+      return;
+    }
+
+    cancelSpeech();
+    setVoiceTranscript("");
+    setVoiceInputState("listening");
+
+    try {
+      await voiceInputRef.current.start({
+        userId: defaultUserId,
+        onTranscript: (event) => {
+          setVoiceTranscript(event.text);
+
+          if (!event.isFinal) {
+            return;
+          }
+
+          const text = event.text.trim();
+          if (!text || text === lastFinalVoiceTextRef.current) {
+            return;
+          }
+
+          lastFinalVoiceTextRef.current = text;
+          void sendMessage(text);
+        },
+        onError: () => {
+          setVoiceInputState("error");
+        },
+      });
+    } catch {
+      setVoiceInputState("error");
+    }
+  }, [cancelSpeech, sendMessage]);
+
+  const toggleVoiceInput = useCallback(() => {
+    if (voiceInputState === "listening") {
+      void stopVoiceInput();
+      return;
+    }
+
+    void startVoiceInput();
+  }, [startVoiceInput, stopVoiceInput, voiceInputState]);
+
   const setDemoIntimacy = useCallback(async (intimacy: number) => {
     if (!window.ocWorld) {
       return;
@@ -256,6 +381,56 @@ export function useChat() {
     setRelationship(nextRelationship);
   }, []);
 
+  const confirmReveal = useCallback(async (insightId: string) => {
+    if (!window.ocWorld) {
+      return;
+    }
+
+    setRevealBusy(true);
+    try {
+      await window.ocWorld.growth.confirmInsight({ userId: defaultUserId, insightId });
+      await refreshGrowthState();
+    } finally {
+      setRevealBusy(false);
+    }
+  }, [refreshGrowthState]);
+
+  const dismissReveal = useCallback(async (candidateId: string) => {
+    if (!window.ocWorld) {
+      return;
+    }
+
+    setRevealBusy(true);
+    try {
+      await window.ocWorld.growth.dismissReveal({ userId: defaultUserId, candidateId });
+      await refreshGrowthState();
+    } finally {
+      setRevealBusy(false);
+    }
+  }, [refreshGrowthState]);
+
+  const rejectReveal = useCallback(async (insightId: string) => {
+    if (!window.ocWorld) {
+      return;
+    }
+
+    setRevealBusy(true);
+    try {
+      await window.ocWorld.growth.rejectInsight({
+        userId: defaultUserId,
+        insightId,
+        feedback: "这个理解不对",
+      });
+      await refreshGrowthState();
+    } finally {
+      setRevealBusy(false);
+    }
+  }, [refreshGrowthState]);
+
+  const dismissRecallHint = useCallback(() => {
+    setActiveRecallHint(null);
+  }, []);
+
   return useMemo(
     () => ({
       character,
@@ -267,12 +442,27 @@ export function useChat() {
       isSending,
       pendingMessages,
       ttsEnabled,
+      voiceInputState,
+      voiceTranscript,
       hermesStatus,
+      activeReveal,
+      growthInsights,
+      growthProfile,
+      revealBusy,
+      activeRecallHint,
       cancelSpeech,
       interruptActiveTurn,
       sendMessage,
       setTtsEnabled,
+      startVoiceInput,
+      stopVoiceInput,
+      toggleVoiceInput,
       setDemoIntimacy,
+      confirmReveal,
+      dismissReveal,
+      rejectReveal,
+      dismissRecallHint,
+      refreshState: boot,
       defaultCharacterId,
       defaultUserId,
     }),
@@ -286,12 +476,27 @@ export function useChat() {
       isSending,
       pendingMessages,
       ttsEnabled,
+      voiceInputState,
+      voiceTranscript,
       hermesStatus,
+      activeReveal,
+      growthInsights,
+      growthProfile,
+      revealBusy,
+      activeRecallHint,
       cancelSpeech,
       interruptActiveTurn,
       sendMessage,
       setTtsEnabled,
+      startVoiceInput,
+      stopVoiceInput,
+      toggleVoiceInput,
       setDemoIntimacy,
+      confirmReveal,
+      dismissReveal,
+      rejectReveal,
+      dismissRecallHint,
+      boot,
     ],
   );
 }
